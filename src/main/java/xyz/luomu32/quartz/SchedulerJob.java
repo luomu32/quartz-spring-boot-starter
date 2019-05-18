@@ -11,12 +11,12 @@ public @interface SchedulerJob {
 
     String name() default "";
 
-    //TODO 支持简单的触发机制
     String cron() default "";
 
-    //是否持久化
     boolean storeDurably() default false;
 
-    //故障转移，仅当集群模式有效
+    /**
+     * only work for cluster mode
+     */
     boolean recover() default false;
 }
