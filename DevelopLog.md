@@ -1,4 +1,0 @@
-- [ ] SchedulerJob支持简单触发机制
-- [ ] SchedulerJobAnnotationBeanPostProcessor,取消scan，直接通过ResourceLoader方式获取Class信息，不需要组装成BeanDefinition
-- [ ] 编写READEME.md
-- [ ] push github
