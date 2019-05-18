@@ -5,49 +5,96 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.MutablePropertyValues;
+import org.springframework.beans.factory.BeanDefinitionStoreException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
-import org.springframework.beans.factory.annotation.AnnotatedBeanDefinition;
-import org.springframework.beans.factory.config.BeanDefinition;
-import org.springframework.beans.factory.config.BeanDefinitionHolder;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.support.*;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
+import org.springframework.beans.factory.support.BeanNameGenerator;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.boot.autoconfigure.AutoConfigurationPackages;
+import org.springframework.context.ApplicationContext;
+import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.context.annotation.*;
-import org.springframework.core.type.filter.AnnotationTypeFilter;
+import org.springframework.context.annotation.AnnotationBeanNameGenerator;
+import org.springframework.core.io.Resource;
+import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
+import org.springframework.core.type.classreading.MetadataReader;
+import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
 
-import java.util.LinkedHashSet;
-import java.util.Set;
+import java.io.IOException;
+import java.util.Map;
 
-public class SchedulerJobAnnotationBeanPostProcessor implements BeanDefinitionRegistryPostProcessor, BeanFactoryAware {
+public class SchedulerJobAnnotationBeanPostProcessor implements BeanDefinitionRegistryPostProcessor, BeanFactoryAware, ApplicationContextAware {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(SchedulerJobAnnotationBeanPostProcessor.class);
 
     private BeanFactory beanFactory;
+    private ApplicationContext applicationContext;
 
     @Override
     public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-
-        TriggerBeanDefinitionScanner scanner = new TriggerBeanDefinitionScanner(registry);
         String basePackage = StringUtils.arrayToDelimitedString(AutoConfigurationPackages.get(this.beanFactory).toArray(), ConfigurableApplicationContext.CONFIG_LOCATION_DELIMITERS);
 
+        String classResourcePath = "classpath*:" + ClassUtils.convertClassNameToResourcePath(this.applicationContext.getEnvironment().resolveRequiredPlaceholders(basePackage)) + "/**/*.class";
 
-        scanner.addIncludeFilter(new AnnotationTypeFilter(SchedulerJob.class));
+        BeanNameGenerator beanNameGenerator = new AnnotationBeanNameGenerator();
 
-//        scanner.addIncludeFilter(new TypeFilter() {
-//            @Override
-//            public boolean match(MetadataReader metadataReader, MetadataReaderFactory metadataReaderFactory) throws IOException {
-//
-//                return metadataReader.getAnnotationMetadata().isAnnotated(Trigger.class.getName()) &&
-//                        implJobInterface(metadataReader.getClassMetadata().getInterfaceNames());
-//            }
-//        });
+        CachingMetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory();
 
-        scanner.scan(basePackage);
+        try {
+            Resource[] resources = this.applicationContext.getResources(classResourcePath);
+            for (Resource resource : resources) {
+                MetadataReader reader = metadataReaderFactory.getMetadataReader(resource);
+
+                String[] interfaces = reader.getClassMetadata().getInterfaceNames();
+
+                if (reader.getAnnotationMetadata().hasAnnotation(SchedulerJob.class.getName())
+                        && matchJobInterface(interfaces)) {
+
+                    String beanClassName = reader.getClassMetadata().getClassName();
+
+                    Map<String, ?> attr = reader.getAnnotationMetadata().getAnnotationAttributes(SchedulerJob.class.getName());
+
+                    String name = StringUtils.isEmpty(attr.get("name")) ? beanClassName : attr.get("name").toString();
+
+                    Object recover = attr.get("recover");
+                    Object storeDurably = attr.get("storeDurably");
+                    Object cron = attr.get("cron");
+
+                    RootBeanDefinition jobDetailBd = new RootBeanDefinition(JobDetailFactory.class);
+                    MutablePropertyValues propertyValues = new MutablePropertyValues();
+                    propertyValues.add("jobClass", beanClassName);
+                    propertyValues.add("jobName", name);
+                    propertyValues.add("recovery", recover);
+                    propertyValues.add("storeDurability", storeDurably);
+                    jobDetailBd.setPropertyValues(propertyValues);
+
+                    String jobBeanName = beanNameGenerator.generateBeanName(jobDetailBd, registry);
+                    registry.registerBeanDefinition(jobBeanName, jobDetailBd);
+                    LOGGER.info("register job,name: {},class:{},recover:{},durably:{}", name, beanClassName, recover, storeDurably);
+
+
+                    RootBeanDefinition triggerDb = new RootBeanDefinition(TriggerFactory.class);
+                    MutablePropertyValues triggerPropertyValues = new MutablePropertyValues();
+                    triggerPropertyValues.add("cron", cron);
+                    triggerPropertyValues.add("jobName", name);
+                    triggerDb.setPropertyValues(triggerPropertyValues);
+
+                    String triggerBeanName = beanNameGenerator.generateBeanName(triggerDb, registry);
+                    registry.registerBeanDefinition(triggerBeanName, triggerDb);
+                    LOGGER.info("register trigger for job:{},cron:{}", name, cron);
+                }
+            }
+
+        } catch (IOException e) {
+            throw new BeanDefinitionStoreException("I/O failure during classpath scanning", e);
+        }
     }
 
-    private boolean implJobInterface(String[] interfaces) {
+    private boolean matchJobInterface(String[] interfaces) {
         for (String interfaceClass : interfaces) {
             if (interfaceClass.equals(Job.class.getName())) {
                 return true;
@@ -65,86 +112,8 @@ public class SchedulerJobAnnotationBeanPostProcessor implements BeanDefinitionRe
         this.beanFactory = beanFactory;
     }
 
-    public class TriggerBeanDefinitionScanner extends ClassPathBeanDefinitionScanner {
-
-        private final Logger log = LoggerFactory.getLogger(TriggerBeanDefinitionScanner.class);
-
-        private ScopeMetadataResolver scopeMetadataResolver = new AnnotationScopeMetadataResolver();
-        private BeanNameGenerator beanNameGenerator = new AnnotationBeanNameGenerator();
-
-        private BeanDefinitionRegistry registry;
-
-        public TriggerBeanDefinitionScanner(BeanDefinitionRegistry registry) {
-            super(registry);
-            this.registry = registry;
-        }
-
-        @Override
-        protected Set<BeanDefinitionHolder> doScan(String... basePackages) {
-            Set<BeanDefinitionHolder> beanDefinitions = new LinkedHashSet<>();
-            for (String basePackage : basePackages) {
-                Set<BeanDefinition> candidates = findCandidateComponents(basePackage);
-                for (BeanDefinition candidate : candidates) {
-//                    System.out.println(candidate);
-                    ScopeMetadata scopeMetadata = this.scopeMetadataResolver.resolveScopeMetadata(candidate);
-                    candidate.setScope(scopeMetadata.getScopeName());
-                    String beanName = this.beanNameGenerator.generateBeanName(candidate, registry);
-                    if (candidate instanceof AbstractBeanDefinition) {
-                        postProcessBeanDefinition((AbstractBeanDefinition) candidate, beanName);
-                    }
-                    if (candidate instanceof AnnotatedBeanDefinition) {
-                        AnnotationConfigUtils.processCommonDefinitionAnnotations((AnnotatedBeanDefinition) candidate);
-                    }
-                    if (checkCandidate(beanName, candidate)) {
-
-//                        System.out.println(beanName);
-//                        System.out.println(candidate.getBeanClassName());
-//                        System.out.println(candidate.getSource());
-//                        System.out.println(candidate.getClass());
-//                        BeanDefinitionHolder definitionHolder = new BeanDefinitionHolder(candidate, beanName);
-//                        System.out.println(definitionHolder);
-//                        definitionHolder =
-//                                AnnotationConfigUtils.applyScopedProxyMode(scopeMetadata, definitionHolder, this.registry);
-//                        beanDefinitions.add(definitionHolder);
-//                        registerBeanDefinition(definitionHolder, this.registry);
-
-                        SchedulerJob jobDesc = null;
-                        try {
-                            jobDesc = ((AbstractBeanDefinition) candidate).resolveBeanClass(this.getResourceLoader().getClassLoader())
-                                    .getAnnotation(SchedulerJob.class);
-                        } catch (ClassNotFoundException e) {
-                            log.warn("job class '" + candidate.getBeanClassName() + "' not found");
-                            continue;
-                        }
-                        String name = StringUtils.isEmpty(jobDesc.name()) ? candidate.getBeanClassName() : jobDesc.name();
-
-                        RootBeanDefinition jobDetailBd = new RootBeanDefinition(JobDetailFactory.class);
-                        MutablePropertyValues propertyValues = new MutablePropertyValues();
-                        propertyValues.add("jobClass", candidate.getBeanClassName());
-                        propertyValues.add("jobName", name);
-                        propertyValues.add("recovery", jobDesc.recover());
-                        propertyValues.add("storeDurability", jobDesc.storeDurably());
-                        jobDetailBd.setPropertyValues(propertyValues);
-                        BeanDefinitionHolder holder = new BeanDefinitionHolder(jobDetailBd, beanName);
-                        registerBeanDefinition(holder, this.registry);
-                        beanDefinitions.add(holder);
-
-
-                        RootBeanDefinition triggerDb = new RootBeanDefinition(TriggerFactory.class);
-                        MutablePropertyValues triggerPropertyValues = new MutablePropertyValues();
-                        triggerPropertyValues.add("cron", jobDesc.cron());
-                        triggerPropertyValues.add("jobName", name);
-
-                        triggerDb.setPropertyValues(triggerPropertyValues);
-
-                        BeanDefinitionHolder triggerHolder = new BeanDefinitionHolder(triggerDb, "trigger");
-                        registerBeanDefinition(triggerHolder, this.registry);
-                        beanDefinitions.add(triggerHolder);
-
-                    }
-                }
-            }
-            return beanDefinitions;
-        }
+    @Override
+    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
+        this.applicationContext = applicationContext;
     }
 }
