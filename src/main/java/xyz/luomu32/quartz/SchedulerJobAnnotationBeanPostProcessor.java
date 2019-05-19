@@ -63,6 +63,8 @@ public class SchedulerJobAnnotationBeanPostProcessor implements BeanDefinitionRe
                     Object recover = attr.get("recover");
                     Object storeDurably = attr.get("storeDurably");
                     Object cron = attr.get("cron");
+                    Object repeatCount = attr.get("repeatCount");
+                    Object interval = attr.get("interval");
 
                     RootBeanDefinition jobDetailBd = new RootBeanDefinition(JobDetailFactory.class);
                     MutablePropertyValues propertyValues = new MutablePropertyValues();
@@ -76,11 +78,12 @@ public class SchedulerJobAnnotationBeanPostProcessor implements BeanDefinitionRe
                     registry.registerBeanDefinition(jobBeanName, jobDetailBd);
                     LOGGER.info("register job,name: {},class:{},recover:{},durably:{}", name, beanClassName, recover, storeDurably);
 
-
                     RootBeanDefinition triggerDb = new RootBeanDefinition(TriggerFactory.class);
                     MutablePropertyValues triggerPropertyValues = new MutablePropertyValues();
                     triggerPropertyValues.add("cron", cron);
                     triggerPropertyValues.add("jobName", name);
+                    triggerPropertyValues.add("repeatCount", repeatCount);
+                    triggerPropertyValues.add("interval", interval);
                     triggerDb.setPropertyValues(triggerPropertyValues);
 
                     String triggerBeanName = beanNameGenerator.generateBeanName(triggerDb, registry);

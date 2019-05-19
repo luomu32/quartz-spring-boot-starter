@@ -4,10 +4,11 @@ import org.quartz.Job;
 import org.quartz.JobBuilder;
 import org.quartz.JobDetail;
 import org.springframework.beans.factory.FactoryBean;
+import org.springframework.beans.factory.InitializingBean;
 
 import javax.annotation.PostConstruct;
 
-public class JobDetailFactory implements FactoryBean<JobDetail> {
+public class JobDetailFactory implements FactoryBean<JobDetail>, InitializingBean {
 
     private JobDetail jobDetail;
 
@@ -25,10 +26,13 @@ public class JobDetailFactory implements FactoryBean<JobDetail> {
         return this.jobDetail;
     }
 
-    @PostConstruct
-    public void init() {
+    @Override
+    public void afterPropertiesSet() throws Exception {
         if (null == jobClass)
-            throw new IllegalArgumentException("JobClass can not be null");
+            throw new IllegalArgumentException("job class can not be null");
+
+        if (null == jobName)
+            throw new IllegalArgumentException("job name can not be null");
 
         this.jobDetail = JobBuilder
                 .newJob()
@@ -38,7 +42,7 @@ public class JobDetailFactory implements FactoryBean<JobDetail> {
                 .requestRecovery(this.recovery) //任务支持故障转移
                 .build();
     }
-
+    
     @Override
     public Class<?> getObjectType() {
         return JobDetail.class;
