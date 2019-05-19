@@ -4,6 +4,16 @@ this extension base on spring boot quartz autoconfiguration.so make sure add spr
 ```java
 @SchedulerJob(cron = "0 0/1 * * * ?")
 public class FooJob implements Job {
+    @Override
+    public void execute(JobExecutionContext context) throws JobExecutionException {
+        //do some logic...
+    }
+}
+```
+```java
+@SchedulerJob(repeatCount = 10,interval = 20)
+public class FooJob implements Job {
+    @Override
     public void execute(JobExecutionContext context) throws JobExecutionException {
         //do some logic...
     }
