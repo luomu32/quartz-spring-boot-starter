@@ -1,6 +1,6 @@
 # Spring Boot Quartz Integration Extension
 this extension base on spring boot quartz autoconfiguration.so make sure add spring boot dependency into your project first.
-## example
+## Example
 ```java
 @SchedulerJob(cron = "0 0/1 * * * ?")
 public class FooJob implements Job {
@@ -11,7 +11,7 @@ public class FooJob implements Job {
 }
 ```
 ```java
-@SchedulerJob(repeatCount = 10,interval = 20)
+@SchedulerJob(repeatCount = 10,interval = 20000)
 public class FooJob implements Job {
     @Override
     public void execute(JobExecutionContext context) throws JobExecutionException {
@@ -19,3 +19,6 @@ public class FooJob implements Job {
     }
 }
 ```
+## Requirements
+- Java 6+
+- Spring Boot 1.5+

@@ -1,6 +1,8 @@
 package xyz.luomu32.quartz;
 
 import org.quartz.Job;
+import org.quartz.JobKey;
+import org.quartz.impl.JobDetailImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.BeansException;
@@ -9,18 +11,17 @@ import org.springframework.beans.factory.BeanDefinitionStoreException;
 import org.springframework.beans.factory.BeanFactory;
 import org.springframework.beans.factory.BeanFactoryAware;
 import org.springframework.beans.factory.config.ConfigurableListableBeanFactory;
-import org.springframework.beans.factory.support.BeanDefinitionRegistry;
-import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProcessor;
-import org.springframework.beans.factory.support.BeanNameGenerator;
-import org.springframework.beans.factory.support.RootBeanDefinition;
+import org.springframework.beans.factory.support.*;
 import org.springframework.boot.autoconfigure.AutoConfigurationPackages;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ApplicationContextAware;
 import org.springframework.context.ConfigurableApplicationContext;
-import org.springframework.context.annotation.AnnotationBeanNameGenerator;
 import org.springframework.core.io.Resource;
 import org.springframework.core.type.classreading.CachingMetadataReaderFactory;
 import org.springframework.core.type.classreading.MetadataReader;
+import org.springframework.scheduling.quartz.CronTriggerFactoryBean;
+import org.springframework.scheduling.quartz.JobDetailFactoryBean;
+import org.springframework.scheduling.quartz.SimpleTriggerFactoryBean;
 import org.springframework.util.ClassUtils;
 import org.springframework.util.StringUtils;
 
@@ -40,7 +41,7 @@ public class SchedulerJobAnnotationBeanPostProcessor implements BeanDefinitionRe
 
         String classResourcePath = "classpath*:" + ClassUtils.convertClassNameToResourcePath(this.applicationContext.getEnvironment().resolveRequiredPlaceholders(basePackage)) + "/**/*.class";
 
-        BeanNameGenerator beanNameGenerator = new AnnotationBeanNameGenerator();
+        BeanNameGenerator beanNameGenerator = new DefaultBeanNameGenerator();
 
         CachingMetadataReaderFactory metadataReaderFactory = new CachingMetadataReaderFactory();
 
@@ -54,47 +55,85 @@ public class SchedulerJobAnnotationBeanPostProcessor implements BeanDefinitionRe
                 if (reader.getAnnotationMetadata().hasAnnotation(SchedulerJob.class.getName())
                         && matchJobInterface(interfaces)) {
 
-                    String beanClassName = reader.getClassMetadata().getClassName();
+                    String jobClassName = reader.getClassMetadata().getClassName();
 
                     Map<String, ?> attr = reader.getAnnotationMetadata().getAnnotationAttributes(SchedulerJob.class.getName());
 
-                    String name = StringUtils.isEmpty(attr.get("name")) ? beanClassName : attr.get("name").toString();
+                    String jobName = StringUtils.isEmpty(attr.get("name")) ? jobClassName : attr.get("name").toString();
 
                     Object recover = attr.get("recover");
                     Object storeDurably = attr.get("storeDurably");
-                    Object cron = attr.get("cron");
-                    Object repeatCount = attr.get("repeatCount");
-                    Object interval = attr.get("interval");
+                    String cron = attr.get("cron").toString();
+                    int repeatCount = Integer.parseInt(attr.get("repeatCount").toString());
+                    int interval = Integer.parseInt(attr.get("interval").toString());
 
-                    RootBeanDefinition jobDetailBd = new RootBeanDefinition(JobDetailFactory.class);
-                    MutablePropertyValues propertyValues = new MutablePropertyValues();
-                    propertyValues.add("jobClass", beanClassName);
-                    propertyValues.add("jobName", name);
-                    propertyValues.add("recovery", recover);
-                    propertyValues.add("storeDurability", storeDurably);
-                    jobDetailBd.setPropertyValues(propertyValues);
+                    registerJob(jobClassName, jobName, recover, storeDurably, registry, beanNameGenerator);
 
-                    String jobBeanName = beanNameGenerator.generateBeanName(jobDetailBd, registry);
-                    registry.registerBeanDefinition(jobBeanName, jobDetailBd);
-                    LOGGER.info("register job,name: {},class:{},recover:{},durably:{}", name, beanClassName, recover, storeDurably);
-
-                    RootBeanDefinition triggerDb = new RootBeanDefinition(TriggerFactory.class);
-                    MutablePropertyValues triggerPropertyValues = new MutablePropertyValues();
-                    triggerPropertyValues.add("cron", cron);
-                    triggerPropertyValues.add("jobName", name);
-                    triggerPropertyValues.add("repeatCount", repeatCount);
-                    triggerPropertyValues.add("interval", interval);
-                    triggerDb.setPropertyValues(triggerPropertyValues);
-
-                    String triggerBeanName = beanNameGenerator.generateBeanName(triggerDb, registry);
-                    registry.registerBeanDefinition(triggerBeanName, triggerDb);
-                    LOGGER.info("register trigger for job:{},cron:{}", name, cron);
+                    registerTrigger(jobName, jobClassName, cron, interval, repeatCount, beanNameGenerator, registry);
                 }
             }
 
         } catch (IOException e) {
             throw new BeanDefinitionStoreException("I/O failure during classpath scanning", e);
         }
+    }
+
+    private void registerJob(String jobClassName,
+                             String jobName,
+                             Object recover,
+                             Object storeDurably,
+                             BeanDefinitionRegistry registry,
+                             BeanNameGenerator beanNameGenerator) {
+        RootBeanDefinition jobDefinition = new RootBeanDefinition(JobDetailFactoryBean.class);
+
+        MutablePropertyValues propertyValues = new MutablePropertyValues();
+        propertyValues.add("jobClass", jobClassName);
+        propertyValues.add("name", jobName);
+        propertyValues.add("requestsRecovery", recover);
+        propertyValues.add("durability", storeDurably);
+
+        jobDefinition.setPropertyValues(propertyValues);
+
+        String jobBeanName = beanNameGenerator.generateBeanName(jobDefinition, registry);
+
+        registry.registerBeanDefinition(jobBeanName, jobDefinition);
+
+        LOGGER.info("register job,name: {},class:{},recover:{},durably:{}", jobBeanName, jobClassName, recover, storeDurably);
+    }
+
+    private void registerTrigger(String jobName,
+                                 String jobClassName,
+                                 String cron,
+                                 int interval,
+                                 int repeatCount,
+                                 BeanNameGenerator beanNameGenerator,
+                                 BeanDefinitionRegistry registry) {
+        RootBeanDefinition triggerDefinition = new RootBeanDefinition();
+
+        MutablePropertyValues triggerPropertyValues = new MutablePropertyValues();
+        triggerPropertyValues.add("name", jobName + "Trigger");
+
+        JobDetailImpl jobDetail = new JobDetailImpl();
+        jobDetail.setKey(new JobKey(jobName));
+        triggerPropertyValues.add("jobDetail", jobDetail);
+        if (StringUtils.isEmpty(cron)) {
+            triggerDefinition.setBeanClass(SimpleTriggerFactoryBean.class);
+            if (-1 != interval)
+                triggerPropertyValues.add("repeatInterval", interval);
+            if (-1 != repeatCount)
+                triggerPropertyValues.add("repeatCount", repeatCount);
+        } else {
+            triggerDefinition.setBeanClass(CronTriggerFactoryBean.class);
+            triggerPropertyValues.add("cronExpression", cron);
+        }
+
+        triggerDefinition.setPropertyValues(triggerPropertyValues);
+
+        String triggerBeanName = beanNameGenerator.generateBeanName(triggerDefinition, registry);
+
+        registry.registerBeanDefinition(triggerBeanName, triggerDefinition);
+
+        LOGGER.info("register trigger for job:{},cron:{},interval:{},repeatCount:{}", jobClassName, cron, interval, repeatCount);
     }
 
     private boolean matchJobInterface(String[] interfaces) {

@@ -16,7 +16,7 @@ public @interface SchedulerJob {
     int repeatCount() default -1;
 
     /**
-     * unit second
+     * unit milliseconds
      */
     int interval() default -1;
 
