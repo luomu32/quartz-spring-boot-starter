@@ -21,4 +21,5 @@ public class FooJob implements Job {
 ```
 ## Requirements
 - Java 6+
-- Spring Boot 1.5+
+- Spring Boot 2.0.0+
+- Quartz 2.0.0+
