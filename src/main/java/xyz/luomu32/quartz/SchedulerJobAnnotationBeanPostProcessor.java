@@ -37,7 +37,10 @@ public class SchedulerJobAnnotationBeanPostProcessor implements BeanDefinitionRe
 
     @Override
     public void postProcessBeanDefinitionRegistry(BeanDefinitionRegistry registry) throws BeansException {
-        String basePackage = StringUtils.arrayToDelimitedString(AutoConfigurationPackages.get(this.beanFactory).toArray(), ConfigurableApplicationContext.CONFIG_LOCATION_DELIMITERS);
+        String basePackage = this.applicationContext.getEnvironment().getProperty("spring.quartz.basePackage");
+        if (StringUtils.isEmpty(basePackage))
+            basePackage = StringUtils.arrayToDelimitedString(AutoConfigurationPackages.get(this.beanFactory).toArray(), ConfigurableApplicationContext.CONFIG_LOCATION_DELIMITERS);
+
 
         String classResourcePath = "classpath*:" + ClassUtils.convertClassNameToResourcePath(this.applicationContext.getEnvironment().resolveRequiredPlaceholders(basePackage)) + "/**/*.class";
 
@@ -118,10 +121,8 @@ public class SchedulerJobAnnotationBeanPostProcessor implements BeanDefinitionRe
         triggerPropertyValues.add("jobDetail", jobDetail);
         if (StringUtils.isEmpty(cron)) {
             triggerDefinition.setBeanClass(SimpleTriggerFactoryBean.class);
-            if (-1 != interval)
-                triggerPropertyValues.add("repeatInterval", interval);
-            if (-1 != repeatCount)
-                triggerPropertyValues.add("repeatCount", repeatCount);
+            triggerPropertyValues.add("repeatInterval", interval);
+            triggerPropertyValues.add("repeatCount", repeatCount);
         } else {
             triggerDefinition.setBeanClass(CronTriggerFactoryBean.class);
             triggerPropertyValues.add("cronExpression", cron);

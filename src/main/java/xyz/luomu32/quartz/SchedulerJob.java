@@ -13,12 +13,12 @@ public @interface SchedulerJob {
 
     String cron() default "";
 
-    int repeatCount() default -1;
+    int repeatCount() default 0;
 
     /**
      * unit milliseconds
      */
-    int interval() default -1;
+    int interval() default 0;
 
     boolean storeDurably() default false;
 

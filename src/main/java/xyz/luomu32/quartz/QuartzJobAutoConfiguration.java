@@ -5,6 +5,7 @@ import org.springframework.beans.factory.support.BeanDefinitionRegistryPostProce
 import org.springframework.boot.autoconfigure.AutoConfigureAfter;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.quartz.QuartzAutoConfiguration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.quartz.SchedulerFactoryBean;
@@ -12,6 +13,7 @@ import org.springframework.scheduling.quartz.SchedulerFactoryBean;
 @Configuration
 @ConditionalOnClass({Scheduler.class, SchedulerFactoryBean.class, QuartzAutoConfiguration.class})
 @AutoConfigureAfter({QuartzAutoConfiguration.class})
+@EnableConfigurationProperties(QuartzProperties.class)
 public class QuartzJobAutoConfiguration {
 
     @Bean
