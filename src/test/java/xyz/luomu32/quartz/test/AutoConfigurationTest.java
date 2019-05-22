@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
+import org.springframework.test.context.ContextConfiguration;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.junit4.SpringRunner;
 import xyz.luomu32.quartz.QuartzJobAutoConfiguration;
@@ -19,7 +20,6 @@ import xyz.luomu32.quartz.SchedulerJobAnnotationBeanPostProcessor;
 import java.util.Map;
 
 @RunWith(SpringRunner.class)
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @ImportAutoConfiguration(classes = QuartzJobAutoConfiguration.class)
 @TestPropertySource(properties = "spring.quartz.basePackage=xyz.luomu32.quartz.test")
 public class AutoConfigurationTest {
