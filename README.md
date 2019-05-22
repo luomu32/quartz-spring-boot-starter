@@ -1,4 +1,6 @@
 # Spring Boot Quartz Integration Extension
+![Maven Central](https://img.shields.io/maven-central/v/xyz.luomu32/quartz-spring-boot-starter.svg)
+
 this extension base on spring boot quartz autoconfiguration.so make sure add spring boot dependency into your project first.
 ## Example
 base on CronTrigger,will be executed by every minute.
